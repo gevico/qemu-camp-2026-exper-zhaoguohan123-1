@@ -62,6 +62,197 @@ void helper_raise_exception(CPURISCVState *env, uint32_t exception)
     riscv_raise_exception(env, exception, 0);
 }
 
+static int32_t xg233ai_ld_i32(CPURISCVState *env, target_ulong addr,
+                              uintptr_t ra)
+{
+    return (int32_t)cpu_ldl_le_data_ra(env, addr, ra);
+}
+
+static uint32_t xg233ai_ld_u32(CPURISCVState *env, target_ulong addr,
+                               uintptr_t ra)
+{
+    return cpu_ldl_le_data_ra(env, addr, ra);
+}
+
+static void xg233ai_st_i32(CPURISCVState *env, target_ulong addr,
+                           int32_t val, uintptr_t ra)
+{
+    cpu_stl_le_data_ra(env, addr, (uint32_t)val, ra);
+}
+
+void helper_xg233ai_dma(CPURISCVState *env, target_ulong dst,
+                        target_ulong src, target_ulong grain)
+{
+    uintptr_t ra = GETPC();
+    int n;
+
+    switch (grain) {
+    case 0:
+        n = 8;
+        break;
+    case 1:
+        n = 16;
+        break;
+    case 2:
+        n = 32;
+        break;
+    default:
+        n = 8;
+        break;
+    }
+
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            uint32_t val = xg233ai_ld_u32(env, src + (i * n + j) * 4, ra);
+            cpu_stl_le_data_ra(env, dst + (j * n + i) * 4, val, ra);
+        }
+    }
+}
+
+void helper_xg233ai_gemm(CPURISCVState *env, target_ulong c,
+                         target_ulong a, target_ulong b)
+{
+    uintptr_t ra = GETPC();
+
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            int64_t acc = 0;
+
+            for (int k = 0; k < 4; k++) {
+                int32_t aval = xg233ai_ld_i32(env, a + (i * 4 + k) * 4, ra);
+                int32_t bval = xg233ai_ld_i32(env, b + (k * 4 + j) * 4, ra);
+
+                acc += (int64_t)aval * bval;
+            }
+            xg233ai_st_i32(env, c + (i * 4 + j) * 4, (int32_t)acc, ra);
+        }
+    }
+}
+
+void helper_xg233ai_sort(CPURISCVState *env, target_ulong k,
+                         target_ulong arr, target_ulong n)
+{
+    uintptr_t ra = GETPC();
+    target_ulong limit = MIN(k, n);
+
+    for (target_ulong i = 0; i + 1 < limit; i++) {
+        for (target_ulong j = 0; j + 1 < limit - i; j++) {
+            target_ulong addr0 = arr + j * 4;
+            target_ulong addr1 = addr0 + 4;
+            int32_t val0 = xg233ai_ld_i32(env, addr0, ra);
+            int32_t val1 = xg233ai_ld_i32(env, addr1, ra);
+
+            if (val0 > val1) {
+                xg233ai_st_i32(env, addr0, val1, ra);
+                xg233ai_st_i32(env, addr1, val0, ra);
+            }
+        }
+    }
+}
+
+void helper_xg233ai_vadd(CPURISCVState *env, target_ulong dst,
+                         target_ulong a, target_ulong b)
+{
+    uintptr_t ra = GETPC();
+
+    for (int i = 0; i < 16; i++) {
+        int32_t aval = xg233ai_ld_i32(env, a + i * 4, ra);
+        int32_t bval = xg233ai_ld_i32(env, b + i * 4, ra);
+
+        xg233ai_st_i32(env, dst + i * 4, aval + bval, ra);
+    }
+}
+
+void helper_xg233ai_crush(CPURISCVState *env, target_ulong dst,
+                          target_ulong src, target_ulong n)
+{
+    uintptr_t ra = GETPC();
+    target_ulong out_len = (n + 1) / 2;
+
+    for (target_ulong i = 0; i < n / 2; i++) {
+        uint8_t lo = cpu_ldub_data_ra(env, src + 2 * i, ra) & 0x0f;
+        uint8_t hi = cpu_ldub_data_ra(env, src + 2 * i + 1, ra) & 0x0f;
+
+        cpu_stb_data_ra(env, dst + i, lo | (hi << 4), ra);
+    }
+
+    if (n & 1) {
+        uint8_t val = cpu_ldub_data_ra(env, src + n - 1, ra) & 0x0f;
+
+        cpu_stb_data_ra(env, dst + out_len - 1, val, ra);
+    }
+}
+
+void helper_xg233ai_expand(CPURISCVState *env, target_ulong dst,
+                           target_ulong src, target_ulong n)
+{
+    uintptr_t ra = GETPC();
+
+    for (target_ulong i = 0; i < n; i++) {
+        uint8_t val = cpu_ldub_data_ra(env, src + i, ra);
+
+        cpu_stb_data_ra(env, dst + 2 * i, val & 0x0f, ra);
+        cpu_stb_data_ra(env, dst + 2 * i + 1, (val >> 4) & 0x0f, ra);
+    }
+}
+
+target_ulong helper_xg233ai_vdot(CPURISCVState *env, target_ulong a,
+                                 target_ulong b)
+{
+    uintptr_t ra = GETPC();
+    int64_t acc = 0;
+
+    for (int i = 0; i < 16; i++) {
+        int32_t aval = xg233ai_ld_i32(env, a + i * 4, ra);
+        int32_t bval = xg233ai_ld_i32(env, b + i * 4, ra);
+
+        acc += (int64_t)aval * bval;
+    }
+
+    return acc;
+}
+
+void helper_xg233ai_vrelu(CPURISCVState *env, target_ulong dst,
+                          target_ulong src, target_ulong n)
+{
+    uintptr_t ra = GETPC();
+
+    for (target_ulong i = 0; i < n; i++) {
+        int32_t val = xg233ai_ld_i32(env, src + i * 4, ra);
+
+        xg233ai_st_i32(env, dst + i * 4, val > 0 ? val : 0, ra);
+    }
+}
+
+void helper_xg233ai_vscale(CPURISCVState *env, target_ulong dst,
+                           target_ulong src, target_ulong scale)
+{
+    uintptr_t ra = GETPC();
+
+    for (int i = 0; i < 16; i++) {
+        int32_t val = xg233ai_ld_i32(env, src + i * 4, ra);
+
+        xg233ai_st_i32(env, dst + i * 4, (int32_t)((int64_t)val * scale), ra);
+    }
+}
+
+target_ulong helper_xg233ai_vmax(CPURISCVState *env, target_ulong src,
+                                 target_ulong n)
+{
+    uintptr_t ra = GETPC();
+    int32_t max = xg233ai_ld_i32(env, src, ra);
+
+    for (target_ulong i = 1; i < n; i++) {
+        int32_t val = xg233ai_ld_i32(env, src + i * 4, ra);
+
+        if (val > max) {
+            max = val;
+        }
+    }
+
+    return (target_long)max;
+}
+
 target_ulong helper_csrr(CPURISCVState *env, int csr)
 {
     /*

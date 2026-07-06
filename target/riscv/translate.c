@@ -1188,6 +1188,8 @@ static uint32_t opcode_at(DisasContextBase *dcbase, target_ulong pc)
 
 #define SS_MMU_INDEX(ctx) (ctx->mem_idx | MMU_IDX_SS_WRITE)
 
+#include "insn_trans/trans_xg233ai.c.inc"
+
 /* Include insn module translation function */
 #include "insn_trans/trans_rvi.c.inc"
 #include "insn_trans/trans_rvm.c.inc"
